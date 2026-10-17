@@ -81,6 +81,12 @@ public class HologramManager extends Ticked {
     }
 
     public void updateVisibility(@NonNull Player player, @NonNull Hologram hologram) {
+        // Visibility changes send packets and may inspect player/world state. The manager ticker
+        // is asynchronous, so all such work must be handed to the player's owning region.
+        S.forPlayer(player, () -> updateVisibilityOnPlayer(player, hologram));
+    }
+
+    private void updateVisibilityOnPlayer(Player player, Hologram hologram) {
         if (hologram.isDisabled()) {
             return;
         }
@@ -233,6 +239,10 @@ public class HologramManager extends Ticked {
      * @param player Given player.
      */
     public void showAll(@NonNull Player player) {
+        S.forPlayer(player, () -> showAllOnPlayer(player));
+    }
+
+    private void showAllOnPlayer(Player player) {
         for (Hologram hologram : getHolograms()) {
             hologram.show(player, hologram.getPlayerPage(player));
         }
@@ -247,6 +257,10 @@ public class HologramManager extends Ticked {
      * @param player Given player.
      */
     public void hideAll(@NonNull Player player) {
+        S.forPlayer(player, () -> hideAllOnPlayer(player));
+    }
+
+    private void hideAllOnPlayer(Player player) {
         for (Hologram hologram : getHolograms()) {
             hologram.hide(player);
         }
