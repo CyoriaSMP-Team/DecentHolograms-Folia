@@ -6,13 +6,15 @@ remain in place for Paper and older supported versions.
 
 ## Changes in this pass
 
-- Visibility refreshes initiated by the asynchronous ticker now schedule player
-  work through the platform's entity scheduler abstraction.
 - Show/hide-all and quit/teleport/respawn handling no longer send player packets
   from async tasks. Quit cleanup runs in the quit event's player context.
+- The shared ticker and world load/unload/reload paths now enter the global
+  scheduler before enumerating players or resolving Bukkit worlds. Hologram
+  viewer updates and hides are handed to each viewer's entity scheduler.
 - The `folia-supported` declaration was removed. The remaining cross-region
   paths below need work before the plugin can safely advertise Folia support.
-- Added a focused test pinning `S.forPlayer` to `PlatformScheduler.runForPlayer`.
+- Focused tests pin `S.forPlayer` and the repeating global scheduler facade to
+  their platform scheduler routes.
 
 ## Remaining ownership blockers
 
@@ -22,14 +24,19 @@ called from arbitrary plugin threads. A full fix needs ownership-aware state
 updates (or immutable snapshots) across `Hologram`, `HologramLine`, and page
 mutations, plus per-player packet operations throughout those public APIs.
 
-World load/unload handlers and hologram load/save paths still perform Bukkit
-world/location and shared hologram operations from async work. Several commands
-and action handlers dispatch server-wide commands through the global scheduler;
-console command safety depends on each command's own world/entity behavior.
-Click callbacks also invoke arbitrary registered listeners/actions, so their
-thread contract cannot be made safe without a documented API contract and
-careful scheduling of player-dependent portions.
+The packet listener is inserted into Netty's pipeline and calls `onClick`
+synchronously so it can cancel the packet. `onClick` reads player location and
+shared hologram state, so this path needs a Folia-safe interception design that
+preserves packet cancellation. Standalone `HologramLine` all-player operations
+and public API methods also need an explicit scheduler contract. Click callbacks
+invoke arbitrary registered listeners/actions, so their thread contract needs
+documentation and player-dependent portions need careful scheduling.
 
-No local Gradle build or tests were run, per request; CI should run the focused
-test and project checks on the remote runner. Keep Folia disabled in plugin
-metadata until the blockers above have been addressed and exercised on Folia.
+Reload currently resolves Bukkit worlds and loads configuration on the global
+region. A large hologram set could stall that region; move pure file parsing off
+the global scheduler before removing that limit.
+
+The local Gradle test/build attempt did not finish: dependency metadata resolution
+stalled after the build logic configured. Run the focused test and project checks
+on the remote runner. Keep Folia disabled in plugin metadata until the blockers
+above have been addressed and exercised on Folia.

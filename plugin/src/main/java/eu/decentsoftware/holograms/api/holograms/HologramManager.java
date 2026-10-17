@@ -54,7 +54,7 @@ public class HologramManager extends Ticked {
         this.decentHolograms = decentHolograms;
         this.register();
 
-        S.async(this::reload); // Reload when the worlds are ready
+        S.sync(this::reload); // Resolve hologram worlds on the global region after startup.
     }
 
     @Override
@@ -64,14 +64,16 @@ public class HologramManager extends Ticked {
 
     private void updateVisibility() {
         for (Hologram hologram : Hologram.getCachedHolograms()) {
-            updateVisibility(hologram);
+            updateVisibilityOnGlobal(hologram);
         }
     }
 
     public void updateVisibility(@NonNull Hologram hologram) {
-        for (Player player : Bukkit.getOnlinePlayers()) {
-            updateVisibility(player, hologram);
-        }
+        S.sync(() -> updateVisibilityOnGlobal(hologram));
+    }
+
+    private void updateVisibilityOnGlobal(Hologram hologram) {
+        Bukkit.getOnlinePlayers().forEach(player -> updateVisibility(player, hologram));
     }
 
     public void updateVisibility(@NonNull Player player) {
@@ -179,7 +181,7 @@ public class HologramManager extends Ticked {
     public synchronized void reload() {
         this.destroy();
         this.loadHolograms();
-        S.async(this::updateVisibility);
+        S.sync(this::updateVisibility);
     }
 
     private void loadHolograms() {

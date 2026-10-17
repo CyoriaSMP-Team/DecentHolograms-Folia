@@ -152,11 +152,15 @@ public class HologramsCommand extends DecentCommand {
         @Override
         public CommandHandler getCommandHandler() {
             return (sender, args) -> {
-                S.async(() -> {
+                S.sync(() -> {
                     long start = System.currentTimeMillis();
                     decentHolograms.reload();
                     long end = System.currentTimeMillis();
-                    Lang.RELOADED.send(sender, end - start);
+                    if (sender instanceof Player) {
+                        S.forPlayer((Player) sender, () -> Lang.RELOADED.send(sender, end - start));
+                    } else {
+                        Lang.RELOADED.send(sender, end - start);
+                    }
                 });
                 return true;
             };

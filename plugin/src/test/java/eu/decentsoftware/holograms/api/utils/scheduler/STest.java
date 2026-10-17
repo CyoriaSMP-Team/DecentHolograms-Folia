@@ -26,4 +26,16 @@ class STest {
 
         verify(scheduler).runForPlayer(platformPlayer, task);
     }
+
+    @Test
+    void repeatedSynchronousWorkUsesTheGlobalRegionSchedulerRoute() {
+        PlatformScheduler scheduler = mock(PlatformScheduler.class);
+        PlatformPlayerService players = mock(PlatformPlayerService.class);
+        S.initialize(scheduler, players);
+
+        Runnable task = () -> { };
+        S.syncTask(task, 5L, 1L);
+
+        verify(scheduler).runGlobalTimer(task, 5L, 1L);
+    }
 }

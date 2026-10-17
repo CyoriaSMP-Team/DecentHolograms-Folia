@@ -74,6 +74,10 @@ public final class S {
         return scheduler().runGlobal(runnable);
     }
 
+    public static TaskHandle syncTask(Runnable runnable, long delay, long interval) {
+        return scheduler().runGlobalTimer(runnable, delay, interval);
+    }
+
     public static TaskHandle async(Runnable runnable) {
         return scheduler().runAsync(runnable);
     }

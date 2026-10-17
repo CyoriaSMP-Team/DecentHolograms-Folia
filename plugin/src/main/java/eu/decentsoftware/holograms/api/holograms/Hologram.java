@@ -33,6 +33,7 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -359,11 +360,11 @@ public class Hologram extends UpdatingHologramObject implements ITicked {
     public void tick() {
         if (tickCounter.get() == getUpdateInterval()) {
             tickCounter.set(1);
-            updateAll();
+            updateAllOnGlobal(false);
             return;
         }
         tickCounter.incrementAndGet();
-        updateAnimationsAll();
+        updateAnimationsAllOnGlobal();
     }
 
     /*
@@ -697,11 +698,11 @@ public class Hologram extends UpdatingHologramObject implements ITicked {
     }
 
     public void showAll() {
-        synchronized (visibilityMutex) {
+        S.sync(() -> {
             if (isEnabled()) {
-                Bukkit.getOnlinePlayers().forEach(player -> show(player, getPlayerPage(player)));
+                Bukkit.getOnlinePlayers().forEach(player -> S.forPlayer(player, () -> show(player, getPlayerPage(player))));
             }
-        }
+        });
     }
 
     public void update(@NonNull Player player) {
@@ -727,9 +728,13 @@ public class Hologram extends UpdatingHologramObject implements ITicked {
      * @see DHAPI#updateHologram(String)
      */
     public void updateAll(boolean force) {
+        S.sync(() -> updateAllOnGlobal(force));
+    }
+
+    private void updateAllOnGlobal(boolean force) {
         synchronized (visibilityMutex) {
             if (isEnabled() && !hasFlag(EnumFlag.DISABLE_UPDATING)) {
-                getViewerPlayers().forEach(player -> performUpdate(force, player));
+                getViewerPlayers().forEach(player -> S.forPlayer(player, () -> update(force, player)));
             }
         }
     }
@@ -756,9 +761,13 @@ public class Hologram extends UpdatingHologramObject implements ITicked {
     }
 
     public void updateAnimationsAll() {
+        S.sync(this::updateAnimationsAllOnGlobal);
+    }
+
+    private void updateAnimationsAllOnGlobal() {
         synchronized (visibilityMutex) {
             if (isEnabled() && !hasFlag(EnumFlag.DISABLE_ANIMATIONS)) {
-                getViewerPlayers().forEach(this::performUpdateAnimations);
+                getViewerPlayers().forEach(player -> S.forPlayer(player, () -> updateAnimations(player)));
             }
         }
     }
@@ -792,11 +801,27 @@ public class Hologram extends UpdatingHologramObject implements ITicked {
     }
 
     public void hideAll() {
+        Map<UUID, HologramPage> pagesToHide = new HashMap<>();
         synchronized (visibilityMutex) {
-            if (isEnabled()) {
-                getViewerPlayers().forEach(this::hide);
-            }
+            viewerPages.forEach((uuid, pageIndex) -> pagesToHide.put(uuid, getPage(pageIndex)));
         }
+
+        S.sync(() -> pagesToHide.forEach((uuid, page) -> {
+            Player player = Bukkit.getPlayer(uuid);
+            if (player == null || !player.isOnline()) {
+                return;
+            }
+            S.forPlayer(player, () -> {
+                synchronized (visibilityMutex) {
+                    if (viewers.contains(uuid)) {
+                        if (page != null) {
+                            hidePageFrom(player, page);
+                        }
+                        viewers.remove(uuid);
+                    }
+                }
+            });
+        }));
     }
 
     public void showClickableEntities(@NonNull Player player) {
