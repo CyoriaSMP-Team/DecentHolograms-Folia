@@ -36,9 +36,27 @@ Reload currently resolves Bukkit worlds and loads configuration on the global
 region. A large hologram set could stall that region; move pure file parsing off
 the global scheduler before removing that limit.
 
-Local `:plugin:compileJava`, `:plugin:compileTestJava`, and
-`:nms:nms-paper_v1_21_R7:compileJava` pass with JDK 21. The full `:plugin:test`
-task cannot finish offline because older NMS modules need uncached Spigot
-snapshots (`1.20.6` and `1.21.1`). Run full CI and the Folia runtime smoke before
-considering a release. Keep Folia disabled in plugin metadata until the blockers
-above have been addressed and exercised on Folia.
+## Verification (2026-10-18)
+
+- [CI run 39091434090](https://github.com/CyoriaSMP-Team/DecentHolograms-Folia/actions/runs/39091434090)
+  and [Folia development run 39091433902](https://github.com/CyoriaSMP-Team/DecentHolograms-Folia/actions/runs/39091433902)
+  passed for PR head `f138baa3c7353a0371f8ab9a5bd1b310acc9b3bf`. The development
+  artifact was built from merge commit `36643d142ab8c3541c3ce8e6fb2b7fb3e32002e4`.
+  The unmodified plugin JAR SHA-256 was
+  `4302e28e44aa80866c088a132e8437fdfc86aa47ea8e4589abe901800b059fa0`.
+- The JAR loaded on isolated Folia 1.21.11-14 with Java 25 and four configured
+  region tick threads. Two offline clients 427 blocks apart clicked the Region A
+  and Region B holograms and received the matching messages. A second scratch-only
+  fixture pass logged both player-command actions on a Folia region scheduler
+  thread, with no plugin or scheduler exceptions. Both regions were assigned to
+  worker `#1`, so this did not demonstrate execution on separate workers.
+- Folia metadata was added only to the scratch copy
+  (`96c93990d4a109442982b8ac978986a222be41765316228d13d3937d3040aaa9`) to allow
+  that runtime smoke. The repository plugin metadata and unmodified CI artifact
+  still have no `folia-supported` declaration.
+
+The click-path smoke and CI pass, but the public hologram API still permits
+arbitrary-thread calls into shared page, line, and viewer state; reload also parses
+and resolves worlds on the global scheduler. Keep Folia disabled in plugin
+metadata and do not publish a Folia-compatible release until those remaining
+ownership paths have a scheduler contract and are exercised on Folia.
