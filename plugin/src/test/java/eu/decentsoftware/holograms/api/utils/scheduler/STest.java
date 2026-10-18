@@ -6,6 +6,8 @@ import eu.decentsoftware.holograms.platform.api.scheduler.PlatformScheduler;
 import org.bukkit.entity.Player;
 import org.junit.jupiter.api.Test;
 
+import java.util.UUID;
+
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -23,6 +25,21 @@ class STest {
 
         Runnable task = () -> { };
         S.forPlayer(bukkitPlayer, task);
+
+        verify(scheduler).runForPlayer(platformPlayer, task);
+    }
+
+    @Test
+    void playerWorkCanBeScheduledByCachedUuidFromAnOffThreadCallback() {
+        PlatformScheduler scheduler = mock(PlatformScheduler.class);
+        PlatformPlayerService players = mock(PlatformPlayerService.class);
+        PlatformPlayer platformPlayer = mock(PlatformPlayer.class);
+        UUID playerId = UUID.randomUUID();
+        when(players.getPlayer(playerId)).thenReturn(platformPlayer);
+        S.initialize(scheduler, players);
+
+        Runnable task = () -> { };
+        S.forPlayer(playerId, task);
 
         verify(scheduler).runForPlayer(platformPlayer, task);
     }

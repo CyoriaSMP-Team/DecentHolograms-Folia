@@ -8,6 +8,7 @@ import org.bukkit.entity.Player;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.Objects;
+import java.util.UUID;
 import java.util.function.Consumer;
 
 /**
@@ -49,6 +50,26 @@ public final class S {
      */
     public static TaskHandle forPlayer(Player player, Runnable runnable) {
         return scheduler().runForPlayer(platformPlayer(player), runnable);
+    }
+
+    /**
+     * Runs a task for an already registered player without reading the Bukkit player off-thread.
+     * If the player has quit, the task is dropped.
+     *
+     * @param uniqueId The player UUID.
+     * @param runnable The task.
+     */
+    public static void forPlayer(UUID uniqueId, Runnable runnable) {
+        Objects.requireNonNull(uniqueId, "uniqueId cannot be null");
+        Objects.requireNonNull(runnable, "runnable cannot be null");
+        PlatformPlayerService current = playerService;
+        if (current == null) {
+            throw new IllegalStateException("Player service is not set. S#initialize must be called before scheduling tasks.");
+        }
+        PlatformPlayer player = current.getPlayer(uniqueId);
+        if (player != null) {
+            scheduler().runForPlayer(player, runnable);
+        }
     }
 
     /**

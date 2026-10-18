@@ -176,7 +176,10 @@ public class HologramPage extends FlagHolder {
             return false;
         }
         lines.add(index, line);
-        parent.getViewerPlayers(this.index).forEach(line::show);
+        parent.getViewerPlayers(this.index).forEach(player -> {
+            line.show(player);
+            parent.registerDisplayedLineEntities(player, line);
+        });
         realignLines();
         return true;
     }
@@ -196,12 +199,17 @@ public class HologramPage extends FlagHolder {
         }
 
         HologramLineType previousType = line.getType();
+        int[] previousEntityIds = line.getEntityIds();
 
         line.setContent(content);
 
         if (line.getType() != previousType) {
             line.hide();
             line.show();
+            parent.getViewerPlayers(this.index).forEach(player -> {
+                parent.unregisterDisplayedLineEntities(player, previousEntityIds);
+                parent.registerDisplayedLineEntities(player, line);
+            });
             realignLines();
         }
         return true;
@@ -234,6 +242,9 @@ public class HologramPage extends FlagHolder {
         }
         HologramLine line = lines.remove(index);
         if (line != null) {
+            int[] entityIds = line.getEntityIds();
+            parent.getViewerPlayers(this.index).forEach(player ->
+                    parent.unregisterDisplayedLineEntities(player, entityIds));
             line.destroy();
             realignLines();
         }

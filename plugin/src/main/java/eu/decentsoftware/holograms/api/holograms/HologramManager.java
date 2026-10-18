@@ -170,6 +170,10 @@ public class HologramManager extends Ticked {
         return false;
     }
 
+    public boolean isDisplayedEntity(@NonNull UUID playerId, int entityId) {
+        return Hologram.isDisplayedEntity(playerId, entityId);
+    }
+
     public void onQuit(@NonNull Player player) {
         Hologram.getCachedHolograms().forEach(hologram -> hologram.onQuit(player));
         clickCooldowns.remove(player.getUniqueId());

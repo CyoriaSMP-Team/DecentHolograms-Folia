@@ -2,9 +2,12 @@ package eu.decentsoftware.holograms.nms;
 
 import eu.decentsoftware.holograms.api.actions.ClickType;
 import eu.decentsoftware.holograms.api.holograms.HologramManager;
+import eu.decentsoftware.holograms.api.utils.scheduler.S;
 import eu.decentsoftware.holograms.nms.api.NmsPacketListener;
 import eu.decentsoftware.holograms.nms.api.event.NmsEntityInteractAction;
 import eu.decentsoftware.holograms.nms.api.event.NmsEntityInteractEvent;
+
+import java.util.UUID;
 
 /**
  * This packet listener is responsible for handling player interactions with holograms.
@@ -23,9 +26,18 @@ public class DecentHologramsNmsPacketListener implements NmsPacketListener {
     @Override
     public void onEntityInteract(NmsEntityInteractEvent event) {
         ClickType clickType = mapEntityInteractActionToClickType(event.getAction());
-        boolean processed = hologramManager.onClick(event.getPlayer(), event.getEntityId(), clickType);
-        if (processed) {
+        UUID playerId = event.getPlayerId();
+        if (playerId == null) {
+            if (hologramManager.onClick(event.getPlayer(), event.getEntityId(), clickType)) {
+                event.setHandled(true);
+            }
+            return;
+        }
+
+        if (hologramManager.isDisplayedEntity(playerId, event.getEntityId())) {
+            // Rendered hologram entity IDs must be consumed before the server resolves the click.
             event.setHandled(true);
+            S.forPlayer(playerId, () -> hologramManager.onClick(event.getPlayer(), event.getEntityId(), clickType));
         }
     }
 
