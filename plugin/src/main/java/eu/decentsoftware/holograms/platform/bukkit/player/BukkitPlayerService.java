@@ -75,8 +75,9 @@ public class BukkitPlayerService implements PlatformPlayerService {
 
     public void registerPlayer(Player player) {
         BukkitPlayer bukkitPlayer = playerFactory.create(player);
-        onlinePlayers.add(bukkitPlayer);
-        playerMap.put(player.getUniqueId(), bukkitPlayer);
+        if (playerMap.putIfAbsent(player.getUniqueId(), bukkitPlayer) == null) {
+            onlinePlayers.add(bukkitPlayer);
+        }
     }
 
     public void unregisterPlayer(Player player) {

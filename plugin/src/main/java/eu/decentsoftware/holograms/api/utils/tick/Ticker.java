@@ -22,7 +22,7 @@ public class Ticker {
         this.ticks = new AtomicLong(0);
         this.tickedObjects = new ConcurrentHashMap<>();
         this.performingTick = false;
-        this.task = S.asyncTask(() -> {
+        this.task = S.syncTask(() -> {
             if (!performingTick) tick();
         }, 5L, 1L);
     }
