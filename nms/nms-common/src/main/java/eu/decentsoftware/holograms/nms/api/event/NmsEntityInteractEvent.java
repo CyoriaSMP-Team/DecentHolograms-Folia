@@ -1,6 +1,9 @@
 package eu.decentsoftware.holograms.nms.api.event;
 
 import org.bukkit.entity.Player;
+import org.jetbrains.annotations.Nullable;
+
+import java.util.UUID;
 
 /**
  * An event that is fired when a player interacts with an entity.
@@ -13,12 +16,18 @@ import org.bukkit.entity.Player;
 public class NmsEntityInteractEvent {
 
     private final Player player;
+    private final UUID playerId;
     private final int entityId;
     private final NmsEntityInteractAction action;
     private boolean handled = false;
 
     public NmsEntityInteractEvent(Player player, int entityId, NmsEntityInteractAction action) {
+        this(player, null, entityId, action);
+    }
+
+    public NmsEntityInteractEvent(Player player, @Nullable UUID playerId, int entityId, NmsEntityInteractAction action) {
         this.player = player;
+        this.playerId = playerId;
         this.entityId = entityId;
         this.action = action;
     }
@@ -30,6 +39,16 @@ public class NmsEntityInteractEvent {
      */
     public Player getPlayer() {
         return player;
+    }
+
+    /**
+     * Get the player's UUID captured when the packet listener was registered.
+     *
+     * @return The UUID, or null for legacy listeners that do not cache it.
+     */
+    @Nullable
+    public UUID getPlayerId() {
+        return playerId;
     }
 
     /**

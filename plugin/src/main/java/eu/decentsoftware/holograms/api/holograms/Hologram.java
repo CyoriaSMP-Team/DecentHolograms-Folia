@@ -33,11 +33,13 @@ import java.io.File;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Consumer;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
@@ -68,6 +70,7 @@ public class Hologram extends UpdatingHologramObject implements ITicked {
      * @see #getCachedHologram(String)
      */
     private static final @NonNull Map<String, Hologram> CACHED_HOLOGRAMS;
+    private static final Map<UUID, Map<Integer, Hologram>> DISPLAYED_ENTITY_IDS = new ConcurrentHashMap<>();
 
     static {
         CACHED_HOLOGRAMS = new ConcurrentHashMap<>();
@@ -90,6 +93,42 @@ public class Hologram extends UpdatingHologramObject implements ITicked {
     @Contract(pure = true)
     public static Collection<Hologram> getCachedHolograms() {
         return CACHED_HOLOGRAMS.values();
+    }
+
+    static boolean isDisplayedEntity(UUID playerId, int entityId) {
+        Map<Integer, Hologram> entityIds = DISPLAYED_ENTITY_IDS.get(playerId);
+        return entityIds != null && entityIds.containsKey(entityId);
+    }
+
+    static void forgetDisplayedEntities(UUID playerId) {
+        DISPLAYED_ENTITY_IDS.remove(playerId);
+    }
+
+    private void forgetOwnedDisplayedEntities(UUID playerId) {
+        Map<Integer, Hologram> entityIds = DISPLAYED_ENTITY_IDS.get(playerId);
+        if (entityIds != null) {
+            entityIds.entrySet().removeIf(entry -> entry.getValue() == this);
+            if (entityIds.isEmpty()) {
+                DISPLAYED_ENTITY_IDS.remove(playerId, entityIds);
+            }
+        }
+    }
+
+    private void addDisplayedEntities(UUID playerId, Set<Integer> entityIds) {
+        if (!entityIds.isEmpty()) {
+            Map<Integer, Hologram> displayed = DISPLAYED_ENTITY_IDS.computeIfAbsent(playerId, ignored -> new ConcurrentHashMap<>());
+            entityIds.forEach(entityId -> displayed.put(entityId, this));
+        }
+    }
+
+    private void removeDisplayedEntities(UUID playerId, Set<Integer> entityIds) {
+        Map<Integer, Hologram> displayed = DISPLAYED_ENTITY_IDS.get(playerId);
+        if (displayed != null) {
+            entityIds.forEach(entityId -> displayed.remove(entityId, this));
+            if (displayed.isEmpty()) {
+                DISPLAYED_ENTITY_IDS.remove(playerId, displayed);
+            }
+        }
     }
 
     /*
@@ -359,11 +398,11 @@ public class Hologram extends UpdatingHologramObject implements ITicked {
     public void tick() {
         if (tickCounter.get() == getUpdateInterval()) {
             tickCounter.set(1);
-            updateAll();
+            updateAllOnGlobal(false);
             return;
         }
         tickCounter.incrementAndGet();
-        updateAnimationsAll();
+        updateAnimationsAllOnGlobal();
     }
 
     /*
@@ -398,6 +437,7 @@ public class Hologram extends UpdatingHologramObject implements ITicked {
     @Override
     public void destroy() {
         this.disable(DisableCause.API);
+        viewerPages.keySet().forEach(this::forgetOwnedDisplayedEntities);
         this.viewerPages.clear();
         DECENT_HOLOGRAMS.getHologramManager().removeHologram(getName());
         CACHED_HOLOGRAMS.remove(getName());
@@ -577,7 +617,25 @@ public class Hologram extends UpdatingHologramObject implements ITicked {
         hide(player);
         removeShowPlayer(player);
         removeHidePlayer(player);
-        viewerPages.remove(player.getUniqueId());
+        UUID playerId = player.getUniqueId();
+        viewerPages.remove(playerId);
+        forgetDisplayedEntities(playerId);
+    }
+
+    void registerDisplayedLineEntities(Player player, HologramLine line) {
+        Set<Integer> entityIds = new HashSet<>();
+        for (int entityId : line.getEntityIds()) {
+            entityIds.add(entityId);
+        }
+        addDisplayedEntities(player.getUniqueId(), entityIds);
+    }
+
+    void unregisterDisplayedLineEntities(Player player, int[] entityIds) {
+        Set<Integer> ids = new HashSet<>();
+        for (int entityId : entityIds) {
+            ids.add(entityId);
+        }
+        removeDisplayedEntities(player.getUniqueId(), ids);
     }
 
     /*
@@ -690,6 +748,13 @@ public class Hologram extends UpdatingHologramObject implements ITicked {
 
     private void showPageTo(@NonNull Player player, @NonNull HologramPage page, int pageIndex) {
         page.getLines().forEach(line -> line.show(player));
+        Set<Integer> lineEntityIds = new HashSet<>();
+        page.getLines().forEach(line -> {
+            for (int entityId : line.getEntityIds()) {
+                lineEntityIds.add(entityId);
+            }
+        });
+        addDisplayedEntities(player.getUniqueId(), lineEntityIds);
         // Add player to viewers
         viewerPages.put(player.getUniqueId(), pageIndex);
         viewers.add(player.getUniqueId());
@@ -697,11 +762,11 @@ public class Hologram extends UpdatingHologramObject implements ITicked {
     }
 
     public void showAll() {
-        synchronized (visibilityMutex) {
+        S.sync(() -> {
             if (isEnabled()) {
-                Bukkit.getOnlinePlayers().forEach(player -> show(player, getPlayerPage(player)));
+                Bukkit.getOnlinePlayers().forEach(player -> S.forPlayer(player, () -> show(player, getPlayerPage(player))));
             }
-        }
+        });
     }
 
     public void update(@NonNull Player player) {
@@ -727,9 +792,13 @@ public class Hologram extends UpdatingHologramObject implements ITicked {
      * @see DHAPI#updateHologram(String)
      */
     public void updateAll(boolean force) {
+        S.sync(() -> updateAllOnGlobal(force));
+    }
+
+    private void updateAllOnGlobal(boolean force) {
         synchronized (visibilityMutex) {
             if (isEnabled() && !hasFlag(EnumFlag.DISABLE_UPDATING)) {
-                getViewerPlayers().forEach(player -> performUpdate(force, player));
+                getViewerPlayers().forEach(player -> S.forPlayer(player, () -> update(force, player)));
             }
         }
     }
@@ -756,9 +825,13 @@ public class Hologram extends UpdatingHologramObject implements ITicked {
     }
 
     public void updateAnimationsAll() {
+        S.sync(this::updateAnimationsAllOnGlobal);
+    }
+
+    private void updateAnimationsAllOnGlobal() {
         synchronized (visibilityMutex) {
             if (isEnabled() && !hasFlag(EnumFlag.DISABLE_ANIMATIONS)) {
-                getViewerPlayers().forEach(this::performUpdateAnimations);
+                getViewerPlayers().forEach(player -> S.forPlayer(player, () -> updateAnimations(player)));
             }
         }
     }
@@ -788,70 +861,105 @@ public class Hologram extends UpdatingHologramObject implements ITicked {
 
     private void hidePageFrom(@NonNull Player player, @NonNull HologramPage page) {
         page.getLines().forEach(line -> line.hide(player));
+        Set<Integer> lineEntityIds = new HashSet<>();
+        page.getLines().forEach(line -> {
+            for (int entityId : line.getEntityIds()) {
+                lineEntityIds.add(entityId);
+            }
+        });
+        removeDisplayedEntities(player.getUniqueId(), lineEntityIds);
         hideClickableEntities(player);
     }
 
     public void hideAll() {
+        Map<UUID, HologramPage> pagesToHide = new HashMap<>();
         synchronized (visibilityMutex) {
-            if (isEnabled()) {
-                getViewerPlayers().forEach(this::hide);
-            }
+            viewerPages.forEach((uuid, pageIndex) -> pagesToHide.put(uuid, getPage(pageIndex)));
         }
+
+        S.sync(() -> pagesToHide.forEach((uuid, page) -> {
+            Player player = Bukkit.getPlayer(uuid);
+            if (player == null || !player.isOnline()) {
+                return;
+            }
+            S.forPlayer(player, () -> {
+                synchronized (visibilityMutex) {
+                    if (viewers.contains(uuid)) {
+                        if (page != null) {
+                            hidePageFrom(player, page);
+                        }
+                        viewers.remove(uuid);
+                    }
+                }
+            });
+        }));
     }
 
     public void showClickableEntities(@NonNull Player player) {
-        HologramPage page = getPage(player);
-        if (page == null || !(page.isClickable() || HologramClickEvent.isRegistered())) {
-            return;
-        }
+        synchronized (visibilityMutex) {
+            HologramPage page = getPage(player);
+            if (page == null || !(page.isClickable() || HologramClickEvent.isRegistered())) {
+                return;
+            }
 
-        // Spawn clickable entities
-        int amount = (int) (page.getHeight() / 2) + 1;
-        Location location = getLocation().clone();
-        location.setY((int) (location.getY() - (isDownOrigin() ? 0 : page.getHeight())) + 0.5);
-        for (int i = 0; i < amount; i++) {
-            NmsClickableHologramRenderer renderer = page.getClickableRenderer(i);
-            renderer.display(player, toDecentPosition(location));
-            location.add(0, 1.8, 0);
+            // Spawn clickable entities
+            int amount = (int) (page.getHeight() / 2) + 1;
+            Location location = getLocation().clone();
+            location.setY((int) (location.getY() - (isDownOrigin() ? 0 : page.getHeight())) + 0.5);
+            Set<Integer> entityIds = new HashSet<>();
+            for (int i = 0; i < amount; i++) {
+                NmsClickableHologramRenderer renderer = page.getClickableRenderer(i);
+                renderer.display(player, toDecentPosition(location));
+                entityIds.add(renderer.getEntityId());
+                location.add(0, 1.8, 0);
+            }
+            addDisplayedEntities(player.getUniqueId(), entityIds);
         }
     }
 
     public void showClickableEntitiesAll() {
         if (isEnabled()) {
-            getViewerPlayers().forEach(this::showClickableEntities);
+            scheduleForViewerPlayers(this::showClickableEntities);
         }
     }
 
     public void hideClickableEntities(@NonNull Player player) {
-        HologramPage page = getPage(player);
-        if (page == null) {
-            return;
-        }
+        synchronized (visibilityMutex) {
+            HologramPage page = getPage(player);
+            if (page == null) {
+                return;
+            }
 
-        // De-spawn clickable entities
-        page.getClickableEntityRenderers().forEach(renderer -> renderer.hide(player));
+            // De-spawn clickable entities
+            page.getClickableEntityRenderers().forEach(renderer -> renderer.hide(player));
+            Set<Integer> entityIds = new HashSet<>();
+            page.getClickableEntityRenderers().forEach(renderer -> entityIds.add(renderer.getEntityId()));
+            removeDisplayedEntities(player.getUniqueId(), entityIds);
+        }
     }
 
     public void hideClickableEntitiesAll() {
         if (isEnabled()) {
-            getViewerPlayers().forEach(this::hideClickableEntities);
+            scheduleForViewerPlayers(this::hideClickableEntities);
         }
     }
 
     public void teleportClickableEntities(@NonNull Player player) {
-        HologramPage page = getPage(player);
-        if (page == null || !(page.isClickable() || HologramClickEvent.isRegistered())) {
-            return;
-        }
+        synchronized (visibilityMutex) {
+            HologramPage page = getPage(player);
+            if (page == null || !(page.isClickable() || HologramClickEvent.isRegistered())) {
+                return;
+            }
 
-        // Spawn clickable entities
-        int amount = (int) (page.getHeight() / 2) + 1;
-        Location location = getLocation().clone();
-        location.setY((int) (location.getY() - (isDownOrigin() ? 0 : page.getHeight())) + 0.5);
-        for (int i = 0; i < amount; i++) {
-            NmsClickableHologramRenderer renderer = page.getClickableRenderer(i);
-            renderer.move(player, toDecentPosition(location));
-            location.add(0, 1.8, 0);
+            // Spawn clickable entities
+            int amount = (int) (page.getHeight() / 2) + 1;
+            Location location = getLocation().clone();
+            location.setY((int) (location.getY() - (isDownOrigin() ? 0 : page.getHeight())) + 0.5);
+            for (int i = 0; i < amount; i++) {
+                NmsClickableHologramRenderer renderer = page.getClickableRenderer(i);
+                renderer.move(player, toDecentPosition(location));
+                location.add(0, 1.8, 0);
+            }
         }
     }
 
@@ -867,8 +975,17 @@ public class Hologram extends UpdatingHologramObject implements ITicked {
 
     public void teleportClickableEntitiesAll() {
         if (isEnabled()) {
-            getViewerPlayers().forEach(this::teleportClickableEntities);
+            scheduleForViewerPlayers(this::teleportClickableEntities);
         }
+    }
+
+    private void scheduleForViewerPlayers(Consumer<Player> task) {
+        S.sync(() -> new HashSet<>(viewerPages.keySet()).forEach(playerId -> {
+            Player player = Bukkit.getPlayer(playerId);
+            if (player != null) {
+                S.forPlayer(playerId, () -> task.accept(player));
+            }
+        }));
     }
 
 
@@ -927,7 +1044,10 @@ public class Hologram extends UpdatingHologramObject implements ITicked {
         Set<Player> players = new HashSet<>();
         viewerPages.forEach((uuid, integer) -> {
             if (integer == pageIndex) {
-                players.add(Bukkit.getPlayer(uuid));
+                Player player = Bukkit.getPlayer(uuid);
+                if (player != null) {
+                    players.add(player);
+                }
             }
         });
         return players;

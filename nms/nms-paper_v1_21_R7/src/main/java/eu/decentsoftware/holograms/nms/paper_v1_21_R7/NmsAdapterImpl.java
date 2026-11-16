@@ -17,6 +17,7 @@ import org.bukkit.entity.Player;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Objects;
+import java.util.UUID;
 import java.util.function.Consumer;
 
 @SuppressWarnings("unused") // Instantiated via reflection
@@ -49,34 +50,37 @@ public class NmsAdapterImpl implements NmsAdapter {
     public void registerPacketListener(Player player, NmsPacketListener listener) {
         Objects.requireNonNull(player, "player cannot be null");
         Objects.requireNonNull(listener, "listener cannot be null");
+        UUID playerId = player.getUniqueId();
 
-        executeOnPipelineInEventLoop(player, pipeline -> {
+        executeOnPipelineInEventLoop(player, playerId, pipeline -> {
             if (pipeline.get(PACKET_HANDLER_NAME) != null) {
                 pipeline.remove(PACKET_HANDLER_NAME);
             }
-            pipeline.addBefore("packet_handler", PACKET_HANDLER_NAME, new InboundPacketHandler(player, listener));
+            pipeline.addBefore("packet_handler", PACKET_HANDLER_NAME,
+                    new InboundPacketHandler(player, playerId, listener));
         });
     }
 
     @Override
     public void unregisterPacketListener(Player player) {
         Objects.requireNonNull(player, "player cannot be null");
+        UUID playerId = player.getUniqueId();
 
-        executeOnPipelineInEventLoop(player, pipeline -> {
+        executeOnPipelineInEventLoop(player, playerId, pipeline -> {
             if (pipeline.get(PACKET_HANDLER_NAME) != null) {
                 pipeline.remove(PACKET_HANDLER_NAME);
             }
         });
     }
 
-    private void executeOnPipelineInEventLoop(Player player, Consumer<ChannelPipeline> task) {
+    private void executeOnPipelineInEventLoop(Player player, UUID playerId, Consumer<ChannelPipeline> task) {
         ChannelPipeline pipeline = getPipeline(player);
         EventLoop eventLoop = pipeline.channel().eventLoop();
 
         if (eventLoop.inEventLoop()) {
-            executeOnPipeline(player, task, pipeline);
+            executeOnPipeline(playerId, task, pipeline);
         } else {
-            eventLoop.execute(() -> executeOnPipeline(player, task, pipeline));
+            eventLoop.execute(() -> executeOnPipeline(playerId, task, pipeline));
         }
     }
 
@@ -86,8 +90,8 @@ public class NmsAdapterImpl implements NmsAdapter {
         return networkManager.channel.pipeline();
     }
 
-    private void executeOnPipeline(Player player, Consumer<ChannelPipeline> task, ChannelPipeline pipeline) {
-        if (!player.isOnline()) {
+    private void executeOnPipeline(UUID playerId, Consumer<ChannelPipeline> task, ChannelPipeline pipeline) {
+        if (!pipeline.channel().isActive()) {
             return;
         }
 
@@ -99,14 +103,14 @@ public class NmsAdapterImpl implements NmsAdapter {
                 // player disconnected immediately after joining
                 return;
             }
-            throwFailedToModifyPipelineException(player, e);
+            throwFailedToModifyPipelineException(playerId, e);
         } catch (Exception e) {
-            throwFailedToModifyPipelineException(player, e);
+            throwFailedToModifyPipelineException(playerId, e);
         }
     }
 
-    private void throwFailedToModifyPipelineException(Player player, Exception e) {
-        throw new DecentHologramsNmsException("Failed to modify player's pipeline. player: " + player.getName(), e);
+    private void throwFailedToModifyPipelineException(UUID playerId, Exception e) {
+        throw new DecentHologramsNmsException("Failed to modify player's pipeline. player: " + playerId, e);
     }
 
 }

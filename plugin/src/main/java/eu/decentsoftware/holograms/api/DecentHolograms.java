@@ -78,6 +78,9 @@ public final class DecentHolograms {
         PluginManager pluginManager = Bukkit.getPluginManager();
         this.integrationAvailabilityService = new IntegrationAvailabilityService(plugin, pluginManager);
         this.integrationAvailabilityService.initialize();
+        BukkitPlayerService playerService = (BukkitPlayerService) platformAdapter.getPlayerService();
+        pluginManager.registerEvents(new BukkitPlayerListener(playerService), this.plugin);
+        Bukkit.getOnlinePlayers().forEach(playerService::registerPlayer);
         this.ticker = new Ticker();
         this.hologramManager = new HologramManager(this);
         this.commandManager = new CommandManager(plugin.getServer());
@@ -92,8 +95,6 @@ public final class DecentHolograms {
 
         pluginManager.registerEvents(new PlayerListener(this), this.plugin);
         pluginManager.registerEvents(new WorldListener(hologramManager), this.plugin);
-        BukkitPlayerService playerService = (BukkitPlayerService) platformAdapter.getPlayerService();
-        pluginManager.registerEvents(new BukkitPlayerListener(playerService), this.plugin);
 
         setupMetrics();
         checkForUpdates();

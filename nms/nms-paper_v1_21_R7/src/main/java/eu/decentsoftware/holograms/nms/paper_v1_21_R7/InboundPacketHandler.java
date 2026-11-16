@@ -9,13 +9,17 @@ import io.netty.channel.ChannelInboundHandlerAdapter;
 import net.minecraft.network.protocol.game.ServerboundInteractPacket;
 import org.bukkit.entity.Player;
 
+import java.util.UUID;
+
 class InboundPacketHandler extends ChannelInboundHandlerAdapter {
 
     private final Player player;
+    private final UUID playerId;
     private final NmsPacketListener listener;
 
-    InboundPacketHandler(Player player, NmsPacketListener listener) {
+    InboundPacketHandler(Player player, UUID playerId, NmsPacketListener listener) {
         this.player = player;
+        this.playerId = playerId;
         this.listener = listener;
     }
 
@@ -28,8 +32,9 @@ class InboundPacketHandler extends ChannelInboundHandlerAdapter {
             int entityId = serializer.readVarInt();
             int actionEnumValueOrdinal = serializer.readVarInt();
 
-            NmsEntityInteractAction action = mapActionEnumValueOrdinalToNmsEntityInteractionAction(actionEnumValueOrdinal);
-            NmsEntityInteractEvent event = new NmsEntityInteractEvent(player, entityId, action);
+            NmsEntityInteractAction action = mapActionEnumValueOrdinalToNmsEntityInteractionAction(
+                    actionEnumValueOrdinal, serverboundInteractPacket.isUsingSecondaryAction());
+            NmsEntityInteractEvent event = new NmsEntityInteractEvent(player, playerId, entityId, action);
             listener.onEntityInteract(event);
             if (event.isHandled()) {
                 return;
@@ -38,15 +43,16 @@ class InboundPacketHandler extends ChannelInboundHandlerAdapter {
         super.channelRead(ctx, packet);
     }
 
-    private NmsEntityInteractAction mapActionEnumValueOrdinalToNmsEntityInteractionAction(int ordinal) {
+    private NmsEntityInteractAction mapActionEnumValueOrdinalToNmsEntityInteractionAction(
+            int ordinal, boolean usingSecondaryAction) {
         // 0 = INTERACT
         // 1 = ATTACK
         // 2 = INTERACT_AT
         //
         // https://minecraft.wiki/w/Java_Edition_protocol#Interact
         return switch (ordinal) {
-            case 1 -> player.isSneaking() ? NmsEntityInteractAction.SHIFT_LEFT_CLICK : NmsEntityInteractAction.LEFT_CLICK;
-            case 0, 2 -> player.isSneaking() ? NmsEntityInteractAction.SHIFT_RIGHT_CLICK : NmsEntityInteractAction.RIGHT_CLICK;
+            case 1 -> usingSecondaryAction ? NmsEntityInteractAction.SHIFT_LEFT_CLICK : NmsEntityInteractAction.LEFT_CLICK;
+            case 0, 2 -> usingSecondaryAction ? NmsEntityInteractAction.SHIFT_RIGHT_CLICK : NmsEntityInteractAction.RIGHT_CLICK;
             default -> throw new DecentHologramsNmsException("Unknown entity use action: " + ordinal);
         };
     }

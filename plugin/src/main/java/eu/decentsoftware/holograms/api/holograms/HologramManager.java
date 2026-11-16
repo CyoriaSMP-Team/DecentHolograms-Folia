@@ -54,7 +54,7 @@ public class HologramManager extends Ticked {
         this.decentHolograms = decentHolograms;
         this.register();
 
-        S.async(this::reload); // Reload when the worlds are ready
+        S.sync(this::reload); // Resolve hologram worlds on the global region after startup.
     }
 
     @Override
@@ -64,14 +64,16 @@ public class HologramManager extends Ticked {
 
     private void updateVisibility() {
         for (Hologram hologram : Hologram.getCachedHolograms()) {
-            updateVisibility(hologram);
+            updateVisibilityOnGlobal(hologram);
         }
     }
 
     public void updateVisibility(@NonNull Hologram hologram) {
-        for (Player player : Bukkit.getOnlinePlayers()) {
-            updateVisibility(player, hologram);
-        }
+        S.sync(() -> updateVisibilityOnGlobal(hologram));
+    }
+
+    private void updateVisibilityOnGlobal(Hologram hologram) {
+        Bukkit.getOnlinePlayers().forEach(player -> updateVisibility(player, hologram));
     }
 
     public void updateVisibility(@NonNull Player player) {
@@ -81,6 +83,12 @@ public class HologramManager extends Ticked {
     }
 
     public void updateVisibility(@NonNull Player player, @NonNull Hologram hologram) {
+        // Visibility changes send packets and may inspect player/world state. The manager ticker
+        // is asynchronous, so all such work must be handed to the player's owning region.
+        S.forPlayer(player, () -> updateVisibilityOnPlayer(player, hologram));
+    }
+
+    private void updateVisibilityOnPlayer(Player player, Hologram hologram) {
         if (hologram.isDisabled()) {
             return;
         }
@@ -162,6 +170,10 @@ public class HologramManager extends Ticked {
         return false;
     }
 
+    public boolean isDisplayedEntity(@NonNull UUID playerId, int entityId) {
+        return Hologram.isDisplayedEntity(playerId, entityId);
+    }
+
     public void onQuit(@NonNull Player player) {
         Hologram.getCachedHolograms().forEach(hologram -> hologram.onQuit(player));
         clickCooldowns.remove(player.getUniqueId());
@@ -173,7 +185,7 @@ public class HologramManager extends Ticked {
     public synchronized void reload() {
         this.destroy();
         this.loadHolograms();
-        S.async(this::updateVisibility);
+        S.sync(this::updateVisibility);
     }
 
     private void loadHolograms() {
@@ -233,6 +245,10 @@ public class HologramManager extends Ticked {
      * @param player Given player.
      */
     public void showAll(@NonNull Player player) {
+        S.forPlayer(player, () -> showAllOnPlayer(player));
+    }
+
+    private void showAllOnPlayer(Player player) {
         for (Hologram hologram : getHolograms()) {
             hologram.show(player, hologram.getPlayerPage(player));
         }
@@ -247,6 +263,10 @@ public class HologramManager extends Ticked {
      * @param player Given player.
      */
     public void hideAll(@NonNull Player player) {
+        S.forPlayer(player, () -> hideAllOnPlayer(player));
+    }
+
+    private void hideAllOnPlayer(Player player) {
         for (Hologram hologram : getHolograms()) {
             hologram.hide(player);
         }
